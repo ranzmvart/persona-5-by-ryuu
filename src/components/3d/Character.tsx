@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFrame } from '@react-three/fiber'
-import { useAnimations, useGLTF } from '@react-three/drei'
+import { useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { createToonMaterial } from './Shaders'
 
@@ -9,7 +9,6 @@ const CHARACTER_URL = '/models/joker_war_of_the_visions_final_fantasy.glb'
 /**
  * Preload di level modul (di luar komponen) — begitu Character mount,
  * model sudah ada di cache useGLTF → tanpa lag saat transisi masuk.
- * Proses-nya async sehingga TIDAK memblokir render scene lain.
  * Argumen `true` = aktifkan Draco compression decoder.
  */
 useGLTF.preload(CHARACTER_URL, true)
@@ -37,14 +36,28 @@ export interface CharacterProps {
   rimIntensity?: number
 }
 
+/** Mesh hasil ekstraksi dari GLB — tanpa hierarki node asli. */
+interface ExtractedMesh {
+  geometry: THREE.BufferGeometry
+  /** Orientasi dunia dari hierarki node asli (mis. rotasi -90° X Sketchfab) */
+  quaternion: THREE.Quaternion
+  /** Posisi dunia mesh asli */
+  position: THREE.Vector3
+}
+
 /**
  * Karakter humanoid anime/ethereal.
  *
- * Perfoma:
- * - SATU toon ShaderMaterial dipakai semua mesh → draw call =
- *   jumlah mesh di .glb (umumnya 1–3). Material asli glb tidak dipakai.
- * - Semua animasi per-frame di useFrame + ref — tanpa React state.
- * - Animasi clip (idle) via useAnimations, fade in/out halus.
+ * Strategi render (dirombak demi keandalan):
+ * - Mesh DI-EKSTRAK dari hierarki GLTF dan dirender sebagai <mesh> r3f
+ *   biasa (persis objek lain di scene). Hierarki node asli (Sketchfab root
+ *   dengan scale 0.01→100, Armature, dll) DIBUANG — hanya orientasi
+ *   dunianya yang dipertahankan. Ini menghilangkan kelas masalah
+ *   parenting/primitive yang bisa bikin mesh tidak dirender.
+ * - SKINNING nonaktif (model 0 animasi): render bind pose langsung dari
+ *   geometry. Skeleton three yang tidak ter-update bikin boneMatrices nol
+ *   → mesh kolaps ke satu titik.
+ * - SATU toon material untuk semua mesh → draw call minimal.
  */
 export default function Character({
   position = [0, 1.4, -1.5],
@@ -57,8 +70,8 @@ export default function Character({
   rimIntensity = 1.4,
 }: CharacterProps) {
   const groupRef = useRef<THREE.Group>(null)
-  const { scene, animations } = useGLTF(CHARACTER_URL, true)
-  const { actions } = useAnimations(animations, scene)
+  const { scene } = useGLTF(CHARACTER_URL, true)
+  const [meshData, setMeshData] = useState<ExtractedMesh | null>(null)
 
   // hasil auto-fit: skala + tinggi dasar (basis untuk bob)
   const fitRef = useRef({ scale: 1, baseY: position[1] })
@@ -69,54 +82,44 @@ export default function Character({
     [rimColor, rimIntensity],
   )
 
-  // ganti material semua mesh dengan toon shader (sekali jalan)
+  // ekstrak mesh pertama (model ini hanya 1 mesh) + orientasi dunianya
   useEffect(() => {
+    const holder: { mesh: THREE.Mesh | null } = { mesh: null }
     scene.traverse((object) => {
-      const mesh = object as THREE.Mesh
-      if (mesh.isMesh) {
-        mesh.material = toonMaterial
-        // culling bounding-box skinned mesh sering salah → matikan
-        mesh.frustumCulled = false
-      }
+      if (!holder.mesh && (object as THREE.Mesh).isMesh) holder.mesh = object as THREE.Mesh
     })
-  }, [scene, toonMaterial])
+    const firstMesh = holder.mesh
+    if (!firstMesh) return
 
-  // auto-fit: ukur bounding box model lalu skala+posisikan ulang ke
-  // ukuran target — menetralkan perbedaan skala/offset antar format export
+    firstMesh.updateWorldMatrix(true, false)
+    const quaternion = new THREE.Quaternion().setFromRotationMatrix(firstMesh.matrixWorld)
+    const worldPos = new THREE.Vector3().setFromMatrixPosition(firstMesh.matrixWorld)
+    const geometry = firstMesh.geometry
+    geometry.computeBoundingBox()
+    setMeshData({ geometry, quaternion, position: worldPos })
+  }, [scene])
+
+  // auto-fit dari bounding box geometry (bind pose)
   useEffect(() => {
-    const box = new THREE.Box3().setFromObject(scene)
-    const size = new THREE.Vector3()
-    const center = new THREE.Vector3()
-    box.getSize(size)
-    box.getCenter(center)
+    if (!meshData) return
+    const box = meshData.geometry.boundingBox
+    if (!box) return
+    const sizeY = box.max.y - box.min.y
+    const centerY = (box.max.y + box.min.y) / 2
 
-    const fit = targetHeight / Math.max(size.y, 0.001)
+    const fit = targetHeight / Math.max(sizeY, 0.001)
     // pindahkan pusat model ke dasar position, lalu naikkan setengah tinggi
-    const baseY = position[1] - center.y * fit + targetHeight / 2
+    const baseY = position[1] - centerY * fit + targetHeight / 2
     fitRef.current = { scale: fit, baseY }
 
     const group = groupRef.current
     if (group) group.scale.setScalar(fit * scale)
-  }, [scene, position, targetHeight, scale])
+  }, [meshData, position, targetHeight, scale])
 
   // cleanup GPU saat karakter dilepas (Suspense unmount)
   useEffect(() => {
     return () => toonMaterial.dispose()
   }, [toonMaterial])
-
-  // mainkan clip idle otomatis — fade in/out halus saat mount/unmount
-  useEffect(() => {
-    const names = Object.keys(actions)
-    if (names.length === 0) return
-    // cari clip bernama idle; kalau tidak ada, ambil clip pertama
-    const clipName = names.find((n) => n.toLowerCase().includes('idle')) ?? names[0]
-    const action = actions[clipName]
-    if (!action) return
-    action.reset().fadeIn(0.5).play()
-    return () => {
-      action.fadeOut(0.5)
-    }
-  }, [actions])
 
   useFrame((state, delta) => {
     const group = groupRef.current
@@ -139,7 +142,11 @@ export default function Character({
 
   return (
     <group ref={groupRef} position={position}>
-      <primitive object={scene} />
+      {meshData && (
+        <group quaternion={meshData.quaternion} position={meshData.position}>
+          <mesh geometry={meshData.geometry} material={toonMaterial} frustumCulled={false} />
+        </group>
+      )}
     </group>
   )
 }

@@ -483,7 +483,13 @@ export interface ToonMaterialOptions {
   lightDir?: [number, number, number]
   /** Render kedua sisi — default true, aman untuk model export apa pun */
   doubleSide?: boolean
-  /** Aktifkan skinning (SkinnedMesh) — default true, dibutuhkan karakter ber-rig */
+  /**
+   * Aktifkan skinning (SkinnedMesh) — default FALSE.
+   * Untuk model tanpa animation clip, bind pose dirender langsung dari
+   * geometry (lebih aman: skeleton three tidak selalu ter-update →
+   * boneMatrices nol → mesh kolaps ke satu titik). Aktifkan hanya jika
+   * model kamu benar-benar memakai animation clip.
+   */
   skinning?: boolean
 }
 
@@ -511,8 +517,9 @@ export function createToonMaterial(options: ToonMaterialOptions = {}): THREE.Sha
   })
 
   // aktifkan USE_SKINNING di program → three.js otomatis menyuntik
-  // boneMatrices + bindMatrix ke shader untuk SkinnedMesh
-  const skinning = options.skinning ?? true
+  // boneMatrices + bindMatrix ke shader untuk SkinnedMesh.
+  // Default false — lihat komentar di ToonMaterialOptions.skinning
+  const skinning = options.skinning ?? false
   ;(material as THREE.ShaderMaterial & { skinning: boolean }).skinning = skinning
 
   return material

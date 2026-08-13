@@ -26,12 +26,12 @@ export const SECTIONS: SectionMeta[] = [
 ]
 
 export const PROFILE = {
-  name: 'RIZKY PRATAMA',
-  firstName: 'RIZKY',
-  lastName: 'PRATAMA',
+  name: 'RYUUXYII',
+  firstName: 'RYUU',
+  lastName: 'XYII',
   role: 'CREATIVE FRONTEND ENGINEER',
   location: 'JAKARTA, INDONESIA',
-  email: 'halo@rizkypratama.dev',
+  email: 'halo@ryuuxyii.dev',
   bio: [
     'Frontend engineer dengan obsesi pada detail dan energi visual. Enam tahun membangun web — dari landing page marketing hingga aplikasi real-time — dengan fokus pada interaksi yang terasa hidup: animasi kinetik, WebGL, dan storytelling lewat interface.',
     'Di luar jam kerja, saya main synthesizer, bikin game jam solo, dan ngumpulin font display. Prinsip saya sederhana: kalau interaksinya tidak bikin orang menoleh, berarti belum selesai.',
@@ -57,10 +57,10 @@ export const PROFILE = {
     { value: '99', label: 'AVG. LIGHTHOUSE' },
   ] as Stat[],
   socials: [
-    { label: 'GITHUB', handle: '@rizkypratama', href: 'https://github.com/rizkypratama' },
-    { label: 'LINKEDIN', handle: '/in/rizkypratama', href: 'https://linkedin.com/in/rizkypratama' },
-    { label: 'X / TWITTER', handle: '@rizkypratama', href: 'https://x.com/rizkypratama' },
-    { label: 'DRIBBBLE', handle: '/rizkypratama', href: 'https://dribbble.com/rizkypratama' },
+    { label: 'GITHUB', handle: '@ryuuxyii', href: 'https://github.com/ryuuxyii' },
+    { label: 'LINKEDIN', handle: '/in/ryuuxyii', href: 'https://linkedin.com/in/ryuuxyii' },
+    { label: 'X / TWITTER', handle: '@ryuuxyii', href: 'https://x.com/ryuuxyii' },
+    { label: 'DRIBBBLE', handle: '/ryuuxyii', href: 'https://dribbble.com/ryuuxyii' },
   ],
 }
 

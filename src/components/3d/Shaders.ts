@@ -375,3 +375,107 @@ export function createDustMaterial(): THREE.ShaderMaterial {
     blending: THREE.AdditiveBlending,
   })
 }
+
+/* ------------------------------------------------------------------ */
+/* 5. TOON — karakter anime: step lighting + rim light berenergi       */
+/*    (bukan PBR realistis — ringan di GPU integrated)                 */
+/* ------------------------------------------------------------------ */
+
+const toonVertex = /* glsl */ `
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPos;
+
+  void main() {
+    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vWorldPos = wp.xyz;
+    vWorldNormal = normalize(mat3(modelMatrix) * normal);
+    gl_Position = projectionMatrix * viewMatrix * wp;
+  }
+`
+
+const toonFragment = /* glsl */ `
+  precision highp float;
+  uniform vec3 uColor;        // warna dasar karakter
+  uniform vec3 uShadowColor;  // tint band bayangan (toon)
+  uniform vec3 uRimColor;     // warna rim light — BISA diatur dari luar
+  uniform float uRimIntensity;// kekuatan rim light — BISA diatur dari luar
+  uniform float uRimPower;    // ketajaman falloff rim
+  uniform float uTime;        // untuk pulse halus
+  uniform float uPulseSpeed;  // kecepatan pulse
+  uniform vec3 uLightDir;     // arah lampu utama (world space)
+  varying vec3 vWorldNormal;
+  varying vec3 vWorldPos;
+
+  void main() {
+    vec3 N = normalize(vWorldNormal);
+    vec3 V = normalize(cameraPosition - vWorldPos);
+    vec3 L = normalize(uLightDir);
+
+    float ndl = max(dot(N, L), 0.0);
+
+    // --- toon step lighting: band datar, bukan gradien PBR
+    // 0.5 (bayangan) → 1.0 (terang) → 1.25 (highlight pertama)
+    float light = mix(0.5, 1.0, step(0.32, ndl));
+    light = mix(light, 1.25, step(0.68, ndl));
+
+    // spec keras ala anime (band, bukan blinn-phong halus)
+    float spec = step(0.85, pow(max(dot(reflect(-V, N), L), 0.0), 32.0));
+    light += spec * 0.45;
+
+    vec3 col = uColor * min(light, 1.3);
+
+    // tint bayangan hanya di band gelap (konsisten dengan gaya toon)
+    col = mix(col, col * uShadowColor, 1.0 - step(0.32, ndl));
+
+    // --- rim light: energi menyala di tepi karakter
+    // fresnel + pulse halus berbasis uTime
+    float fres = pow(1.0 - abs(dot(N, V)), uRimPower);
+    float pulse = 0.65 + 0.35 * sin(uTime * uPulseSpeed);
+    col += uRimColor * fres * uRimIntensity * pulse;
+
+    gl_FragColor = vec4(col, 1.0);
+  }
+`
+
+export interface ToonMaterialOptions {
+  /** Warna dasar karakter (default #f5f2ee — off-white) */
+  color?: string
+  /** Tint band bayangan (default #5a0f22 — merah gelap) */
+  shadowColor?: string
+  /** Warna rim light di tepi karakter (default #ff2d55) */
+  rimColor?: string
+  /** Kekuatan rim light (default 1.4) */
+  rimIntensity?: number
+  /** Ketajaman falloff rim (default 3.0 — makin besar makin tipis) */
+  rimPower?: number
+  /** Kecepatan pulse rim (default 1.6) */
+  pulseSpeed?: number
+  /** Arah lampu utama dalam world space (default dari kiri-atas) */
+  lightDir?: [number, number, number]
+  /** Render kedua sisi — aktifkan kalau model pakai face tunggal */
+  doubleSide?: boolean
+}
+
+/**
+ * Toon shader untuk karakter 3D (anime/ethereal).
+ * Ringan: step lighting 3 band + fresnel — tanpa PBR, tanpa texture lookup.
+ */
+export function createToonMaterial(options: ToonMaterialOptions = {}): THREE.ShaderMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uColor: { value: new THREE.Color(options.color ?? '#f5f2ee') },
+      uShadowColor: { value: new THREE.Color(options.shadowColor ?? '#5a0f22') },
+      uRimColor: { value: new THREE.Color(options.rimColor ?? '#ff2d55') },
+      uRimIntensity: { value: options.rimIntensity ?? 1.4 },
+      uRimPower: { value: options.rimPower ?? 3.0 },
+      uTime: { value: 0 },
+      uPulseSpeed: { value: options.pulseSpeed ?? 1.6 },
+      uLightDir: {
+        value: new THREE.Vector3(...(options.lightDir ?? [0.6, 1.0, 0.4])),
+      },
+    },
+    vertexShader: toonVertex,
+    fragmentShader: toonFragment,
+    side: options.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+  })
+}

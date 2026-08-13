@@ -12,13 +12,18 @@ import {
 import { BlendFunction } from 'postprocessing'
 import * as THREE from 'three'
 import CameraRig from './CameraRig'
+import Character from './Character'
 import FloatingPanels from './FloatingPanels'
 import ProjectCards3D from './ProjectCards3D'
 import { createGroundMaterial, createDustMaterial } from './Shaders'
 import { mulberry32 } from '../../lib/random'
 
-/** Core merah berdenyut di tengah scene — titik fokus section Hero. */
-function Core() {
+/**
+ * Placeholder saat model karakter masih loading:
+ * wireframe icosahedron merah yang dulu jadi "core" di tengah scene.
+ * Otomatis diganti Character begitu .glb selesai di-decode.
+ */
+function CorePlaceholder() {
   return (
     <Float speed={1.6} rotationIntensity={1.4} floatIntensity={1.8}>
       <mesh position={[0, 1.4, -1.5]}>
@@ -122,10 +127,14 @@ export default function Scene() {
 
       <CameraRig />
       <FloatingPanels />
+      {/* Karakter 3D — placeholder tampil selama .glb belum load;
+          model di-preload async sehingga tidak memblokir scene lain */}
+      <Suspense fallback={<CorePlaceholder />}>
+        <Character />
+      </Suspense>
       <Suspense fallback={null}>
         <ProjectCards3D />
       </Suspense>
-      <Core />
       <Dust />
       <Ground />
 

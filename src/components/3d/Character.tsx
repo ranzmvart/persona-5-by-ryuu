@@ -15,10 +15,16 @@ const CHARACTER_URL = '/models/joker_war_of_the_visions_final_fantasy.glb'
 useGLTF.preload(CHARACTER_URL, true)
 
 export interface CharacterProps {
-  /** Posisi karakter di scene (default: lokasi core lama) */
+  /** Posisi dasar karakter di scene (bobot melayang dihitung dari sini) */
   position?: [number, number, number]
-  /** Skala — sesuaikan dengan ukuran model .glb kamu */
+  /** Skala manual tambahan setelah auto-fit (default 1) */
   scale?: number
+  /**
+   * Tinggi target karakter setelah auto-fit bounding box.
+   * Model dari sumber berbeda (Sketchfab/FBX/Unity) punya skala beda —
+   * auto-fit memastikan ukuran selalu konsisten di scene.
+   */
+  targetHeight?: number
   /** Amplitudo bob naik-turun sinusoidal */
   floatAmplitude?: number
   /** Kecepatan bob */
@@ -32,7 +38,7 @@ export interface CharacterProps {
 }
 
 /**
- * Karakter humanoid anime/ethereal (orisinal, bukan aset game).
+ * Karakter humanoid anime/ethereal.
  *
  * Perfoma:
  * - SATU toon ShaderMaterial dipakai semua mesh → draw call =
@@ -43,6 +49,7 @@ export interface CharacterProps {
 export default function Character({
   position = [0, 1.4, -1.5],
   scale = 1,
+  targetHeight = 2.6,
   floatAmplitude = 0.18,
   floatSpeed = 1.1,
   rotationSpeed = 0.25,
@@ -52,6 +59,9 @@ export default function Character({
   const groupRef = useRef<THREE.Group>(null)
   const { scene, animations } = useGLTF(CHARACTER_URL, true)
   const { actions } = useAnimations(animations, scene)
+
+  // hasil auto-fit: skala + tinggi dasar (basis untuk bob)
+  const fitRef = useRef({ scale: 1, baseY: position[1] })
 
   // satu material toon untuk SEMUA mesh — material asli glb dibuang
   const toonMaterial = useMemo(
@@ -66,6 +76,24 @@ export default function Character({
       if (mesh.isMesh) mesh.material = toonMaterial
     })
   }, [scene, toonMaterial])
+
+  // auto-fit: ukur bounding box model lalu skala+posisikan ulang ke
+  // ukuran target — menetralkan perbedaan skala/offset antar format export
+  useEffect(() => {
+    const box = new THREE.Box3().setFromObject(scene)
+    const size = new THREE.Vector3()
+    const center = new THREE.Vector3()
+    box.getSize(size)
+    box.getCenter(center)
+
+    const fit = targetHeight / Math.max(size.y, 0.001)
+    // pindahkan pusat model ke dasar position, lalu naikkan setengah tinggi
+    const baseY = position[1] - center.y * fit + targetHeight / 2
+    fitRef.current = { scale: fit, baseY }
+
+    const group = groupRef.current
+    if (group) group.scale.setScalar(fit * scale)
+  }, [scene, position, targetHeight, scale])
 
   // cleanup GPU saat karakter dilepas (Suspense unmount)
   useEffect(() => {
@@ -95,7 +123,7 @@ export default function Character({
     // floating sinusoidal + damping (frame-rate independent),
     // bukan snap dan bukan React state
     const k = 1 - Math.exp(-4 * delta)
-    const targetY = position[1] + Math.sin(t * floatSpeed) * floatAmplitude
+    const targetY = fitRef.current.baseY + Math.sin(t * floatSpeed) * floatAmplitude
     group.position.y += (targetY - group.position.y) * k
 
     // rotasi sangat pelan
@@ -106,7 +134,7 @@ export default function Character({
   })
 
   return (
-    <group ref={groupRef} position={position} scale={scale}>
+    <group ref={groupRef} position={position}>
       <primitive object={scene} />
     </group>
   )

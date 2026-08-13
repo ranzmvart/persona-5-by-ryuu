@@ -382,11 +382,19 @@ export function createDustMaterial(): THREE.ShaderMaterial {
 /* ------------------------------------------------------------------ */
 
 const toonVertex = /* glsl */ `
+  // skinning support: ShaderMaterial perlu #ifdef USE_SKINNING + skinning:true
+  #ifdef USE_SKINNING
+    #include <skinning_pars_vertex>
+  #endif
   varying vec3 vWorldNormal;
   varying vec3 vWorldPos;
 
   void main() {
-    vec4 wp = modelMatrix * vec4(position, 1.0);
+    vec3 transformed = position;
+    #ifdef USE_SKINNING
+      #include <skinning_vertex>
+    #endif
+    vec4 wp = modelMatrix * vec4(transformed, 1.0);
     vWorldPos = wp.xyz;
     vWorldNormal = normalize(mat3(modelMatrix) * normal);
     gl_Position = projectionMatrix * viewMatrix * wp;
@@ -411,12 +419,14 @@ const toonFragment = /* glsl */ `
     vec3 V = normalize(cameraPosition - vWorldPos);
     vec3 L = normalize(uLightDir);
 
-    float ndl = max(dot(N, L), 0.0);
+    // abs() — model export tertentu (Sketchfab) punya normal terbalik
+    // (negative scale pada node); abs() menjamin karakter tetap terang
+    float ndl = abs(dot(N, L));
 
     // --- toon step lighting: band datar, bukan gradien PBR
-    // 0.5 (bayangan) → 1.0 (terang) → 1.25 (highlight pertama)
-    float light = mix(0.5, 1.0, step(0.32, ndl));
-    light = mix(light, 1.25, step(0.68, ndl));
+    // 0.62 (bayangan) → 1.0 (terang) → 1.25 (highlight pertama)
+    float light = mix(0.62, 1.0, step(0.30, ndl));
+    light = mix(light, 1.25, step(0.66, ndl));
 
     // spec keras ala anime (band, bukan blinn-phong halus)
     float spec = step(0.85, pow(max(dot(reflect(-V, N), L), 0.0), 32.0));
@@ -425,7 +435,11 @@ const toonFragment = /* glsl */ `
     vec3 col = uColor * min(light, 1.3);
 
     // tint bayangan hanya di band gelap (konsisten dengan gaya toon)
-    col = mix(col, col * uShadowColor, 1.0 - step(0.32, ndl));
+    col = mix(col, col * uShadowColor, 1.0 - step(0.30, ndl));
+
+    // brightness minimum — karakter TIDAK pernah hitam total di atas
+    // latar hitam, tetap kelihatan walau lighting paling ekstrem
+    col = max(col, uColor * 0.22);
 
     // --- rim light: energi menyala di tepi karakter
     // fresnel + pulse halus berbasis uTime
@@ -440,7 +454,7 @@ const toonFragment = /* glsl */ `
 export interface ToonMaterialOptions {
   /** Warna dasar karakter (default #f5f2ee — off-white) */
   color?: string
-  /** Tint band bayangan (default #5a0f22 — merah gelap) */
+  /** Tint band bayangan (default #8a2438 — merah gelap, TIDAK terlalu gelap) */
   shadowColor?: string
   /** Warna rim light di tepi karakter (default #ff2d55) */
   rimColor?: string
@@ -452,8 +466,10 @@ export interface ToonMaterialOptions {
   pulseSpeed?: number
   /** Arah lampu utama dalam world space (default dari kiri-atas) */
   lightDir?: [number, number, number]
-  /** Render kedua sisi — aktifkan kalau model pakai face tunggal */
+  /** Render kedua sisi — default true, aman untuk model export apa pun */
   doubleSide?: boolean
+  /** Aktifkan skinning (SkinnedMesh) — default true, dibutuhkan karakter ber-rig */
+  skinning?: boolean
 }
 
 /**
@@ -461,10 +477,10 @@ export interface ToonMaterialOptions {
  * Ringan: step lighting 3 band + fresnel — tanpa PBR, tanpa texture lookup.
  */
 export function createToonMaterial(options: ToonMaterialOptions = {}): THREE.ShaderMaterial {
-  return new THREE.ShaderMaterial({
+  const material = new THREE.ShaderMaterial({
     uniforms: {
       uColor: { value: new THREE.Color(options.color ?? '#f5f2ee') },
-      uShadowColor: { value: new THREE.Color(options.shadowColor ?? '#5a0f22') },
+      uShadowColor: { value: new THREE.Color(options.shadowColor ?? '#8a2438') },
       uRimColor: { value: new THREE.Color(options.rimColor ?? '#ff2d55') },
       uRimIntensity: { value: options.rimIntensity ?? 1.4 },
       uRimPower: { value: options.rimPower ?? 3.0 },
@@ -476,6 +492,13 @@ export function createToonMaterial(options: ToonMaterialOptions = {}): THREE.Sha
     },
     vertexShader: toonVertex,
     fragmentShader: toonFragment,
-    side: options.doubleSide ? THREE.DoubleSide : THREE.FrontSide,
+    side: options.doubleSide ?? true ? THREE.DoubleSide : THREE.FrontSide,
   })
+
+  // aktifkan USE_SKINNING di program → three.js otomatis menyuntik
+  // boneMatrices + bindMatrix ke shader untuk SkinnedMesh
+  const skinning = options.skinning ?? true
+  ;(material as THREE.ShaderMaterial & { skinning: boolean }).skinning = skinning
+
+  return material
 }

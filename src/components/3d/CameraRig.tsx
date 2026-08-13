@@ -91,6 +91,13 @@ export default function CameraRig() {
     // Punch dari ganti section
     camera.position.z += punch.current.amt * 0.35
 
+    // Subtle camera shake: komposit sinus multi-frekuensi (≈ noise murah)
+    // amplitudo kecil agar tidak mengganggu path CatmullRomCurve3
+    const st = swayTime.current
+    const amp = 0.014
+    camera.position.x += (Math.sin(st * 13.7) * 0.5 + Math.sin(st * 7.3 + 1.7) * 0.3) * amp
+    camera.position.y += (Math.sin(st * 11.3 + 0.8) * 0.5 + Math.sin(st * 5.9 + 2.4) * 0.3) * amp
+
     camera.lookAt(lookTarget.current)
   })
 

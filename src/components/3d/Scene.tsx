@@ -1,12 +1,20 @@
-import { Suspense, useMemo } from 'react'
-import { Canvas } from '@react-three/fiber'
-import { Float, Points, PointMaterial } from '@react-three/drei'
-import { EffectComposer, Bloom, Vignette } from '@react-three/postprocessing'
+import { Suspense, useEffect, useMemo } from 'react'
+import { Canvas, useFrame } from '@react-three/fiber'
+import { Float } from '@react-three/drei'
+import {
+  EffectComposer,
+  Bloom,
+  Vignette,
+  ChromaticAberration,
+  Noise,
+  DepthOfField,
+} from '@react-three/postprocessing'
+import { BlendFunction } from 'postprocessing'
 import * as THREE from 'three'
 import CameraRig from './CameraRig'
 import FloatingPanels from './FloatingPanels'
 import ProjectCards3D from './ProjectCards3D'
-import { createGroundMaterial } from './Shaders'
+import { createGroundMaterial, createDustMaterial } from './Shaders'
 import { mulberry32 } from '../../lib/random'
 
 /** Core merah berdenyut di tengah scene — titik fokus section Hero. */
@@ -30,36 +38,61 @@ function Core() {
   )
 }
 
-/** Partikel debu merah kecil — memberi kedalaman tanpa biaya besar. */
+const DUST_COUNT = 2200
+
+/**
+ * Ribuan partikel debu dalam SATU draw call:
+ * THREE.Points + BufferGeometry, animasi sepenuhnya di vertex shader
+ * (drift + twinkle) → GPU-driven, nol update JS per frame.
+ */
 function Dust() {
-  const positions = useMemo(() => {
+  const geometry = useMemo(() => {
     const rand = mulberry32(1337)
-    const arr = new Float32Array(320 * 3)
-    for (let i = 0; i < 320; i++) {
-      arr[i * 3] = (rand() - 0.5) * 26
-      arr[i * 3 + 1] = rand() * 9
-      arr[i * 3 + 2] = (rand() - 0.5) * 18
+    const positions = new Float32Array(DUST_COUNT * 3)
+    const seeds = new Float32Array(DUST_COUNT)
+    for (let i = 0; i < DUST_COUNT; i++) {
+      positions[i * 3] = (rand() - 0.5) * 30
+      positions[i * 3 + 1] = rand() * 10 - 0.5
+      positions[i * 3 + 2] = (rand() - 0.5) * 20
+      seeds[i] = rand() * 100
     }
-    return arr
+    const g = new THREE.BufferGeometry()
+    g.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+    g.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1))
+    return g
   }, [])
 
-  return (
-    <Points positions={positions} stride={3} frustumCulled={false}>
-      <PointMaterial
-        transparent
-        color="#dc143c"
-        size={0.045}
-        sizeAttenuation
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </Points>
-  )
+  const material = useMemo(() => createDustMaterial(), [])
+
+  useFrame(({ clock, gl }) => {
+    material.uniforms.uTime.value = clock.elapsedTime
+    material.uniforms.uDpr.value = gl.getPixelRatio()
+  })
+
+  useEffect(() => {
+    return () => {
+      geometry.dispose()
+      material.dispose()
+    }
+  }, [geometry, material])
+
+  return <points geometry={geometry} material={material} frustumCulled={false} />
 }
 
-/** Lantai grid merah via custom shader (lihat Shaders.ts). */
+/**
+ * Lantai grid merah via custom shader (lihat Shaders.ts).
+ * uCamPos di-update tiap frame → grid fade mengikuti jarak kamera.
+ */
 function Ground() {
   const material = useMemo(() => createGroundMaterial(), [])
+
+  useFrame(({ clock, camera }) => {
+    material.uniforms.uCamPos.value.copy(camera.position)
+    material.uniforms.uTime.value = clock.elapsedTime
+  })
+
+  useEffect(() => () => material.dispose(), [material])
+
   return (
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -0.4, 0]}>
       <planeGeometry args={[220, 220]} />
@@ -81,6 +114,7 @@ export default function Scene() {
       gl={{ antialias: true, powerPreference: 'high-performance' }}
     >
       <color attach="background" args={['#0a0a0a']} />
+      {/* fog gelap senada tema merah-hitam — mengaburkan objek jauh */}
       <fog attach="fog" args={['#0a0a0a', 18, 62]} />
 
       <ambientLight intensity={0.55} />
@@ -95,9 +129,28 @@ export default function Scene() {
       <Dust />
       <Ground />
 
-      {/* Bloom membuat bagian terang "menyala" — hati dari look neon */}
+      {/*
+        ==== POST-PROCESSING STACK (urutan penting) ====
+        1. ChromaticAberration — energi warna di tepi layar (sangat ringan)
+        2. Noise — film grain halus biar tidak terlihat "plastik CG"
+        3. DepthOfField — objek jauh sedikit blur, memberi kedalaman
+        4. Bloom — mipmapBlur menghasilkan glow halus, bukan kotak kasar
+        5. Vignette — sudut layar menggelap
+      */}
       <EffectComposer multisampling={4}>
-        <Bloom intensity={1.15} luminanceThreshold={0.18} luminanceSmoothing={0.9} mipmapBlur radius={0.75} />
+        <ChromaticAberration
+          offset={new THREE.Vector2(0.0016, 0.0012)}
+          radialModulation={false}
+          modulationOffset={0}
+        />
+        <Noise opacity={0.035} premultiply blendFunction={BlendFunction.OVERLAY} />
+        <DepthOfField
+          focusDistance={0.02}
+          focalLength={0.045}
+          bokehScale={2.2}
+          target={new THREE.Vector3(0, 1.4, -1.5)}
+        />
+        <Bloom intensity={1.6} luminanceThreshold={0.15} luminanceSmoothing={0.85} mipmapBlur radius={0.85} />
         <Vignette eskil={false} offset={0.32} darkness={0.82} />
       </EffectComposer>
     </Canvas>

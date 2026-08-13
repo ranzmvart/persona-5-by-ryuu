@@ -60,17 +60,16 @@ export default function App() {
           />
         ))}
 
-        {/* viewport sticky: 3D + overlay section tinggal di sini */}
-        <div className="sticky top-0 h-screen overflow-hidden">
-          <div className="absolute inset-0 z-0">
-            {isMobile ? (
-              <MobileFallback />
-            ) : (
-              <Suspense fallback={<SceneLoader />}>
-                <Scene3D />
+          {/* viewport sticky: 3D + overlay section tinggal di sini */}
+          <div className="sticky top-0 h-screen overflow-hidden">
+            <div className="absolute inset-0 z-0">
+              {/* Scene 3D dimuat di semua device — di mobile pakai
+                  quality 'light' (dpr rendah, post-processing dikurangi).
+                  MobileFallback tampil hanya selama bundle 3D dimuat. */}
+              <Suspense fallback={isMobile ? <MobileFallback /> : <SceneLoader />}>
+                <Scene3D quality={isMobile ? 'light' : 'full'} />
               </Suspense>
-            )}
-          </div>
+            </div>
 
           {/* overlay 2D per section */}
           <HeroSection />

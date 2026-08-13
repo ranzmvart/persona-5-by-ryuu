@@ -50,12 +50,12 @@ const DUST_COUNT = 2200
  * THREE.Points + BufferGeometry, animasi sepenuhnya di vertex shader
  * (drift + twinkle) → GPU-driven, nol update JS per frame.
  */
-function Dust() {
+function Dust({ count = DUST_COUNT }: { count?: number }) {
   const geometry = useMemo(() => {
     const rand = mulberry32(1337)
-    const positions = new Float32Array(DUST_COUNT * 3)
-    const seeds = new Float32Array(DUST_COUNT)
-    for (let i = 0; i < DUST_COUNT; i++) {
+    const positions = new Float32Array(count * 3)
+    const seeds = new Float32Array(count)
+    for (let i = 0; i < count; i++) {
       positions[i * 3] = (rand() - 0.5) * 30
       positions[i * 3 + 1] = rand() * 10 - 0.5
       positions[i * 3 + 2] = (rand() - 0.5) * 20
@@ -65,7 +65,7 @@ function Dust() {
     g.setAttribute('position', new THREE.BufferAttribute(positions, 3))
     g.setAttribute('aSeed', new THREE.BufferAttribute(seeds, 1))
     return g
-  }, [])
+  }, [count])
 
   const material = useMemo(() => createDustMaterial(), [])
 
@@ -106,15 +106,26 @@ function Ground() {
   )
 }
 
+export interface SceneProps {
+  /**
+   * 'full'  = desktop: semua post-processing + partikel penuh.
+   * 'light' = mobile/tablet: dpr rendah, tanpa DoF & ChromaticAberration,
+   *           panel & partikel dikurangi — tetap smooth di GPU integrated.
+   */
+  quality?: 'full' | 'light'
+}
+
 /**
  * Entry point seluruh scene 3D.
  * Komponen ini di-load secara lazy dari App (React.lazy) — bundle three.js
  * terpisah dari main bundle dan baru dimuat saat dibutuhkan.
  */
-export default function Scene() {
+export default function Scene({ quality = 'full' }: SceneProps) {
+  const light = quality === 'light'
+
   return (
     <Canvas
-      dpr={[1, 1.75]}
+      dpr={light ? [1, 1.5] : [1, 1.75]}
       camera={{ fov: 55, near: 0.1, far: 140, position: [0, 0.4, 10] }}
       gl={{ antialias: true, powerPreference: 'high-performance' }}
     >
@@ -126,7 +137,7 @@ export default function Scene() {
       <directionalLight position={[6, 9, 5]} intensity={1.6} />
 
       <CameraRig />
-      <FloatingPanels />
+      <FloatingPanels count={light ? 6 : 14} />
       {/* Karakter 3D — placeholder tampil selama .glb belum load;
           model di-preload async sehingga tidak memblokir scene lain */}
       <Suspense fallback={<CorePlaceholder />}>
@@ -135,7 +146,7 @@ export default function Scene() {
       <Suspense fallback={null}>
         <ProjectCards3D />
       </Suspense>
-      <Dust />
+      <Dust count={light ? 700 : 2200} />
       <Ground />
 
       {/*
@@ -145,22 +156,35 @@ export default function Scene() {
         3. DepthOfField — objek jauh sedikit blur, memberi kedalaman
         4. Bloom — mipmapBlur menghasilkan glow halus, bukan kotak kasar
         5. Vignette — sudut layar menggelap
+
+        Mode light (mobile): buang 1 & 3 (paling mahal), bloom diturunkan,
+        anti-aliasing via multisampling 0 → GPU hemat.
       */}
-      <EffectComposer multisampling={4}>
-        <ChromaticAberration
-          offset={new THREE.Vector2(0.0016, 0.0012)}
-          radialModulation={false}
-          modulationOffset={0}
-        />
-        <Noise opacity={0.035} premultiply blendFunction={BlendFunction.OVERLAY} />
-        <DepthOfField
-          focusDistance={0.02}
-          focalLength={0.045}
-          bokehScale={2.2}
-          target={new THREE.Vector3(0, 1.4, -1.5)}
-        />
-        <Bloom intensity={1.6} luminanceThreshold={0.15} luminanceSmoothing={0.85} mipmapBlur radius={0.85} />
-        <Vignette eskil={false} offset={0.32} darkness={0.82} />
+      <EffectComposer multisampling={light ? 0 : 4}>
+        {light ? (
+          <>
+            <Noise opacity={0.03} premultiply blendFunction={BlendFunction.OVERLAY} />
+            <Bloom intensity={1.15} luminanceThreshold={0.15} luminanceSmoothing={0.85} mipmapBlur radius={0.85} />
+            <Vignette eskil={false} offset={0.32} darkness={0.82} />
+          </>
+        ) : (
+          <>
+            <ChromaticAberration
+              offset={new THREE.Vector2(0.0016, 0.0012)}
+              radialModulation={false}
+              modulationOffset={0}
+            />
+            <Noise opacity={0.035} premultiply blendFunction={BlendFunction.OVERLAY} />
+            <DepthOfField
+              focusDistance={0.02}
+              focalLength={0.045}
+              bokehScale={2.2}
+              target={new THREE.Vector3(0, 1.4, -1.5)}
+            />
+            <Bloom intensity={1.6} luminanceThreshold={0.15} luminanceSmoothing={0.85} mipmapBlur radius={0.85} />
+            <Vignette eskil={false} offset={0.32} darkness={0.82} />
+          </>
+        )}
       </EffectComposer>
     </Canvas>
   )

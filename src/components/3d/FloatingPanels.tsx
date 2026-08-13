@@ -17,6 +17,11 @@ interface PanelItem {
 
 const PANEL_COUNT = 14
 
+interface FloatingPanelsProps {
+  /** Jumlah panel — turunkan di mobile (mode light) demi GPU */
+  count?: number
+}
+
 /**
  * Panel-panel geometris abstrak melayang mengelilingi scene.
  * Semua animasi per-frame dikerjakan manual di useFrame (bukan React state)
@@ -25,10 +30,10 @@ const PANEL_COUNT = 14
  * Upgrade: tiap panel punya parameter uniform sendiri (scanline/glow/noise
  * bervariasi) dan sedikit parallax mengikuti posisi mouse.
  */
-export default function FloatingPanels() {
+export default function FloatingPanels({ count = PANEL_COUNT }: FloatingPanelsProps) {
   const items = useMemo<PanelItem[]>(() => {
     const rand = mulberry32(20260813)
-    return Array.from({ length: PANEL_COUNT }, () => {
+    return Array.from({ length: count }, () => {
       const seed = rand() * 100
       const parallax = 0.1 + rand() * 0.35
       return {
@@ -53,7 +58,7 @@ export default function FloatingPanels() {
         }),
       }
     })
-  }, [])
+  }, [count])
 
   const groupRef = useRef<THREE.Group>(null)
 
@@ -77,7 +82,6 @@ export default function FloatingPanels() {
   useEffect(() => {
     return () => items.forEach((i) => i.material.dispose())
   }, [items])
-
   return (
     <group ref={groupRef}>
       {items.map((item, i) => (

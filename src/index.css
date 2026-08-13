@@ -1,0 +1,126 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+html {
+  scroll-behavior: auto;
+}
+
+body {
+  background: #0a0a0a;
+  color: #f5f2ee;
+  font-family: 'Archivo', system-ui, sans-serif;
+  overflow-x: hidden;
+}
+
+/* Custom cursor aktif hanya di device dengan pointer presisi */
+@media (pointer: fine) {
+  body,
+  a,
+  button,
+  * {
+    cursor: none !important;
+  }
+}
+
+::selection {
+  background: #dc143c;
+  color: #0a0a0a;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+::-webkit-scrollbar-thumb {
+  background: #dc143c;
+  border: 2px solid #0a0a0a;
+}
+
+.font-display {
+  font-family: 'Anton', 'Archivo', sans-serif;
+}
+
+/* Teks outline gaya "impact" Persona */
+.text-stroke {
+  -webkit-text-stroke: 2px rgba(245, 242, 238, 0.9);
+  color: transparent;
+}
+.text-stroke-red {
+  -webkit-text-stroke: 2px #dc143c;
+  color: transparent;
+}
+.text-stroke-soft {
+  -webkit-text-stroke: 1px rgba(245, 242, 238, 0.22);
+  color: transparent;
+}
+
+/* Marquee strip bawah hero */
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.animate-marquee {
+  animation: marquee 24s linear infinite;
+}
+
+/* Shard melayang untuk fallback mobile */
+@keyframes shard-float {
+  0%,
+  100% {
+    transform: translateY(0) rotate(var(--r, 0deg)) skewX(-10deg);
+    opacity: 0.85;
+  }
+  50% {
+    transform: translateY(-26px) rotate(var(--r, 0deg)) skewX(-10deg);
+    opacity: 0.4;
+  }
+}
+.shard {
+  animation: shard-float 6.5s ease-in-out infinite;
+}
+
+@keyframes blink-step {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.2;
+  }
+}
+.animate-blink {
+  animation: blink-step 1.1s steps(2, start) infinite;
+}
+
+/* Scanline tipis di seluruh viewport */
+.scanlines {
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0.028) 0px,
+    rgba(255, 255, 255, 0.028) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+}
+
+/* Garis grid diagonal latar fallback mobile */
+.diag-stripes {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    rgba(220, 20, 60, 0.16) 0px,
+    rgba(220, 20, 60, 0.16) 2px,
+    transparent 2px,
+    transparent 22px
+  );
+}

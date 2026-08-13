@@ -73,7 +73,11 @@ export default function Character({
   useEffect(() => {
     scene.traverse((object) => {
       const mesh = object as THREE.Mesh
-      if (mesh.isMesh) mesh.material = toonMaterial
+      if (mesh.isMesh) {
+        mesh.material = toonMaterial
+        // culling bounding-box skinned mesh sering salah → matikan
+        mesh.frustumCulled = false
+      }
     })
   }, [scene, toonMaterial])
 

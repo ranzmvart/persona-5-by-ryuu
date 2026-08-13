@@ -382,9 +382,15 @@ export function createDustMaterial(): THREE.ShaderMaterial {
 /* ------------------------------------------------------------------ */
 
 const toonVertex = /* glsl */ `
-  // skinning support: ShaderMaterial perlu #ifdef USE_SKINNING + skinning:true
+  // skinning MANUAL — JANGAN pakai #include <skinning_vertex>:
+  // three r16x+ menggantinya dengan versi boneMatX/Y/Z/W yang hanya
+  // dideklarasikan untuk material built-in → ShaderMaterial gagal compile.
+  // Catatan: attribute vec4 skinIndex/skinWeight DI-INJECT OTOMATIS
+  // oleh three saat material.skinning=true (jangan dideklarasikan lagi).
   #ifdef USE_SKINNING
-    #include <skinning_pars_vertex>
+    uniform mat4 bindMatrix;
+    uniform mat4 bindMatrixInverse;
+    uniform mat4 boneMatrices[ 128 ];
   #endif
   varying vec3 vWorldNormal;
   varying vec3 vWorldPos;
@@ -392,7 +398,12 @@ const toonVertex = /* glsl */ `
   void main() {
     vec3 transformed = position;
     #ifdef USE_SKINNING
-      #include <skinning_vertex>
+      vec4 skinVertex = bindMatrix * vec4(position, 1.0);
+      vec4 skinned = boneMatrices[ int(skinIndex.x) ] * skinVertex * skinWeight.x;
+      skinned += boneMatrices[ int(skinIndex.y) ] * skinVertex * skinWeight.y;
+      skinned += boneMatrices[ int(skinIndex.z) ] * skinVertex * skinWeight.z;
+      skinned += boneMatrices[ int(skinIndex.w) ] * skinVertex * skinWeight.w;
+      transformed = (bindMatrixInverse * skinned).xyz;
     #endif
     vec4 wp = modelMatrix * vec4(transformed, 1.0);
     vWorldPos = wp.xyz;
@@ -416,30 +427,34 @@ const toonFragment = /* glsl */ `
 
   void main() {
     vec3 N = normalize(vWorldNormal);
+    // guard: normal rusak/NaN (model export bermasalah) → anggap menghadap
+    // lampu-atas supaya karakter TIDAK tenggelam gelap
+    // (GLSL ES 1.0 tidak punya isnan — pakai cek x==x)
+    if (length(vWorldNormal) < 0.001 || !(N.x == N.x)) N = vec3(0.0, 1.0, 0.0);
+
     vec3 V = normalize(cameraPosition - vWorldPos);
-    vec3 L = normalize(uLightDir);
 
-    // abs() — model export tertentu (Sketchfab) punya normal terbalik
-    // (negative scale pada node); abs() menjamin karakter tetap terang
-    float ndl = abs(dot(N, L));
+    // abs() — model export tertentu punya normal terbalik (negative scale);
+    // abs() menjamin karakter tetap terang di kedua arah
+    float ndl = abs(dot(N, normalize(uLightDir)));
+    if (!(ndl == ndl)) ndl = 1.0; // guard NaN
 
-    // --- toon step lighting: band datar, bukan gradien PBR
-    // 0.62 (bayangan) → 1.0 (terang) → 1.25 (highlight pertama)
-    float light = mix(0.62, 1.0, step(0.30, ndl));
-    light = mix(light, 1.25, step(0.66, ndl));
+    // --- toon step lighting: floor TINGGI (0.78) supaya tidak ada
+    // permukaan yang nyaris hitam — aman untuk normal yang tidak valid
+    float light = mix(0.78, 1.0, step(0.15, ndl));
+    light = mix(light, 1.2, step(0.5, ndl));
 
-    // spec keras ala anime (band, bukan blinn-phong halus)
-    float spec = step(0.85, pow(max(dot(reflect(-V, N), L), 0.0), 32.0));
+    // spec keras ala anime (band)
+    float spec = step(0.85, pow(max(dot(reflect(-V, N), normalize(uLightDir)), 0.0), 32.0));
     light += spec * 0.45;
 
-    vec3 col = uColor * min(light, 1.3);
+    vec3 col = uColor * min(light, 1.35);
 
-    // tint bayangan hanya di band gelap (konsisten dengan gaya toon)
-    col = mix(col, col * uShadowColor, 1.0 - step(0.30, ndl));
+    // tint bayangan RINGAN (max 15% penggelapan) — tidak pernah nyaris hitam
+    col = mix(col, col * uShadowColor, 0.85 * (1.0 - step(0.15, ndl)));
 
-    // brightness minimum — karakter TIDAK pernah hitam total di atas
-    // latar hitam, tetap kelihatan walau lighting paling ekstrem
-    col = max(col, uColor * 0.22);
+    // brightness minimum — karakter TIDAK pernah hitam total
+    col = max(col, uColor * 0.42);
 
     // --- rim light: energi menyala di tepi karakter
     // fresnel + pulse halus berbasis uTime

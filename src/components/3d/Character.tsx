@@ -4,7 +4,7 @@ import { useAnimations, useGLTF } from '@react-three/drei'
 import * as THREE from 'three'
 import { createToonMaterial } from './Shaders'
 
-const CHARACTER_URL = '/models/character.glb'
+const CHARACTER_URL = '/models/joker_war_of_the_visions_final_fantasy.glb'
 
 /**
  * Preload di level modul (di luar komponen) — begitu Character mount,
